@@ -30,12 +30,28 @@ async function run() {
       }
     } catch (e) {}
 
+    // =========================================================
+    // AMBIL DATA ALAMAT BERDASARKAN addressReferenceId
+    // =========================================================
+    let addresses = [];
+    try {
+      if (typeof account.fetch_addresses === 'function') {
+        addresses = await account.fetch_addresses();
+      } else if (typeof account.get_addresses === 'function') {
+        addresses = await account.get_addresses();
+      }
+    } catch (e) {}
+
     const itemsToMap = (tracking && tracking.length > 0) ? tracking : serviceLines;
 
     const results = itemsToMap.map(item => {
       const slNumber = item.serviceLineNumber || item.serviceLine?.serviceLineNumber || 'N/A';
       const matchedSl = serviceLines.find(s => s.serviceLineNumber === slNumber) || item;
       const matchedUt = userTerminals.find(u => u.serviceLineNumber === slNumber || u.userTerminalId === item.servicePlan?.dataPoolUsage?.userTerminalId);
+
+      // Cari alamat yang cocok menggunakan addressReferenceId
+      const targetAddressId = matchedSl.addressReferenceId || item.addressReferenceId || matchedSl.serviceAddressReferenceId;
+      const matchedAddr = addresses.find(a => a.addressReferenceId === targetAddressId || a.id === targetAddressId) || {};
 
       const nickname = matchedSl.nickname || matchedSl.serviceLineName || credName;
       let kitSerialNumber = matchedUt?.kitSerialNumber || matchedUt?.userTerminalId || item.kitSerialNumber;
@@ -95,33 +111,23 @@ async function run() {
         }
       }
 
-      // ==========================================
-      // PERBAIKAN LOGIKA LATITUDE & LONGITUDE
-      // ==========================================
-      const rawLat = 
-        item.latitude ??
-        item.serviceAddress?.latitude ??
-        item.address?.latitude ??
-        item.location?.latitude ??
-        matchedSl?.serviceAddress?.latitude ??
-        matchedSl?.address?.latitude ??
-        matchedUt?.latitude ??
-        matchedUt?.location?.latitude ??
-        null;
+      // Extract latitude & longitude dari objek alamat terasosiasi
+      const rawLat = matchedAddr.latitude ?? 
+                     matchedAddr.coordinates?.latitude ?? 
+                     matchedAddr.location?.latitude ?? 
+                     item.latitude ?? 
+                     matchedSl.latitude ?? 
+                     null;
 
-      const rawLng = 
-        item.longitude ??
-        item.serviceAddress?.longitude ??
-        item.address?.longitude ??
-        item.location?.longitude ??
-        matchedSl?.serviceAddress?.longitude ??
-        matchedSl?.address?.longitude ??
-        matchedUt?.longitude ??
-        matchedUt?.location?.longitude ??
-        null;
+      const rawLng = matchedAddr.longitude ?? 
+                     matchedAddr.coordinates?.longitude ?? 
+                     matchedAddr.location?.longitude ?? 
+                     item.longitude ?? 
+                     matchedSl.longitude ?? 
+                     null;
 
-      const finalLat = (rawLat !== null && !isNaN(Number(rawLat))) ? Number(rawLat) : -6.17539; // Fallback Jakarta jika benar-benar kosong
-      const finalLng = (rawLng !== null && !isNaN(Number(rawLng))) ? Number(rawLng) : 106.82715;
+      const parsedLat = (rawLat !== null && !isNaN(Number(rawLat))) ? Number(rawLat) : -4.54680;
+      const parsedLng = (rawLng !== null && !isNaN(Number(rawLng))) ? Number(rawLng) : 136.88380;
 
       return {
         accountGroup: credName,
@@ -135,8 +141,8 @@ async function run() {
         localPriorityGB: localPriorityGB,
         otherDataGB: otherDataGB,
         totalDataUsageGB: totalDataUsageGB,
-        latitude: finalLat,
-        longitude: finalLng,
+        latitude: parsedLat,
+        longitude: parsedLng,
         dailyUsage: dailyData
       };
     });
