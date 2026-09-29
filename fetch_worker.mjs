@@ -95,6 +95,34 @@ async function run() {
         }
       }
 
+      // ==========================================
+      // PERBAIKAN LOGIKA LATITUDE & LONGITUDE
+      // ==========================================
+      const rawLat = 
+        item.latitude ??
+        item.serviceAddress?.latitude ??
+        item.address?.latitude ??
+        item.location?.latitude ??
+        matchedSl?.serviceAddress?.latitude ??
+        matchedSl?.address?.latitude ??
+        matchedUt?.latitude ??
+        matchedUt?.location?.latitude ??
+        null;
+
+      const rawLng = 
+        item.longitude ??
+        item.serviceAddress?.longitude ??
+        item.address?.longitude ??
+        item.location?.longitude ??
+        matchedSl?.serviceAddress?.longitude ??
+        matchedSl?.address?.longitude ??
+        matchedUt?.longitude ??
+        matchedUt?.location?.longitude ??
+        null;
+
+      const finalLat = (rawLat !== null && !isNaN(Number(rawLat))) ? Number(rawLat) : -6.17539; // Fallback Jakarta jika benar-benar kosong
+      const finalLng = (rawLng !== null && !isNaN(Number(rawLng))) ? Number(rawLng) : 106.82715;
+
       return {
         accountGroup: credName,
         nickname: nickname,
@@ -107,8 +135,8 @@ async function run() {
         localPriorityGB: localPriorityGB,
         otherDataGB: otherDataGB,
         totalDataUsageGB: totalDataUsageGB,
-        latitude: item.latitude || -4.54680,
-        longitude: item.longitude || 136.88380,
+        latitude: finalLat,
+        longitude: finalLng,
         dailyUsage: dailyData
       };
     });
