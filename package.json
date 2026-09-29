@@ -1,0 +1,14 @@
+{
+  "name": "starlink-dashboard-api",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@gibme/starlink": "latest",
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}

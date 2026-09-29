@@ -1,0 +1,122 @@
+import { StarlinkAPI } from '@gibme/starlink/enterprise';
+
+const clientId = process.argv[2];
+const clientSecret = process.argv[3];
+const credName = process.argv[4];
+
+async function run() {
+  try {
+    const api = new StarlinkAPI(clientId, clientSecret);
+    const accounts = await api.fetch_accounts();
+    if (!accounts || accounts.length === 0) {
+      console.log(JSON.stringify([]));
+      return;
+    }
+
+    const account = accounts[0];
+    const tracking = await account.fetch_realtime_data_tracking().catch(() => []);
+
+    let serviceLines = [];
+    try {
+      if (typeof account.fetch_service_lines === 'function') {
+        serviceLines = await account.fetch_service_lines();
+      }
+    } catch (e) {}
+
+    let userTerminals = [];
+    try {
+      if (typeof account.fetch_user_terminals === 'function') {
+        userTerminals = await account.fetch_user_terminals();
+      }
+    } catch (e) {}
+
+    const itemsToMap = (tracking && tracking.length > 0) ? tracking : serviceLines;
+
+    const results = itemsToMap.map(item => {
+      const slNumber = item.serviceLineNumber || item.serviceLine?.serviceLineNumber || 'N/A';
+      const matchedSl = serviceLines.find(s => s.serviceLineNumber === slNumber) || item;
+      const matchedUt = userTerminals.find(u => u.serviceLineNumber === slNumber || u.userTerminalId === item.servicePlan?.dataPoolUsage?.userTerminalId);
+
+      const nickname = matchedSl.nickname || matchedSl.serviceLineName || credName;
+      let kitSerialNumber = matchedUt?.kitSerialNumber || matchedUt?.userTerminalId || item.kitSerialNumber;
+
+      if (!kitSerialNumber || kitSerialNumber.length > 20) {
+        if (item.servicePlan?.dataPoolUsage?.userTerminalId) {
+          kitSerialNumber = 'KIT' + item.servicePlan.dataPoolUsage.userTerminalId.replace(/-/g, '').toUpperCase().substring(0, 12);
+        } else {
+          kitSerialNumber = matchedUt?.kitSerialNumber || 'N/A';
+        }
+      }
+
+      const activeBc = item.billingCycles?.find(bc => bc.dailyDataUsage && bc.dailyDataUsage.length > 0) || item.billingCycles?.[0] || matchedSl.billingCycles?.[0];
+      const dailyDataRaw = activeBc?.dailyDataUsage || [];
+
+      const dailyData = dailyDataRaw.map(day => {
+        const priorityVal = Number(day.priorityGB || day.localPriorityGB || 0);
+        const standardVal = Number(day.standardGB || day.otherGB || 0);
+        const totalDayVal = Math.round((priorityVal + standardVal) * 100) / 100;
+
+        return {
+          date: day.date,
+          priorityGB: priorityVal,
+          standardGB: standardVal,
+          totalGB: totalDayVal
+        };
+      });
+
+      let localPriorityGB = activeBc?.priorityGBUsed 
+        || item.servicePlan?.dataPoolUsage?.consumedAmountGB 
+        || dailyData.reduce((acc, d) => acc + d.priorityGB, 0);
+
+      let otherDataGB = activeBc?.standardGBUsed 
+        || dailyData.reduce((acc, d) => acc + d.standardGB, 0);
+
+      localPriorityGB = Math.round(localPriorityGB * 100) / 100;
+      otherDataGB = Math.round(otherDataGB * 100) / 100;
+
+      const totalDataUsageGB = Math.round((localPriorityGB + otherDataGB) * 100) / 100;
+      let limitGB = item.servicePlan?.usageLimitGB || 50;
+
+      const percentUsage = limitGB > 0 ? Math.min(100, Math.round((localPriorityGB / limitGB) * 100)) : 0;
+
+      let deviceStatus = 'Offline';
+      const isExplicitOnline = item.online === true || matchedUt?.connected === true || item.deviceState === 'CONNECTED' || item.state === 'ONLINE';
+      const isExplicitOffline = item.online === false || matchedUt?.connected === false || item.deviceState === 'OFFLINE' || matchedUt?.unreachable === true;
+
+      if (isExplicitOnline) {
+        deviceStatus = 'Online';
+      } else if (isExplicitOffline) {
+        deviceStatus = 'Offline';
+      } else {
+        if (matchedSl.active !== false && (localPriorityGB > 0 || otherDataGB > 0 || dailyData.length > 0)) {
+          deviceStatus = 'Online';
+        } else {
+          deviceStatus = 'Offline';
+        }
+      }
+
+      return {
+        accountGroup: credName,
+        nickname: nickname,
+        serviceLineNumber: slNumber,
+        kitId: kitSerialNumber,
+        serviceStatus: 'ACTIVE',
+        deviceStatus: deviceStatus,
+        limitGB: limitGB,
+        percentUsage: percentUsage,
+        localPriorityGB: localPriorityGB,
+        otherDataGB: otherDataGB,
+        totalDataUsageGB: totalDataUsageGB,
+        latitude: item.latitude || -4.54680,
+        longitude: item.longitude || 136.88380,
+        dailyUsage: dailyData
+      };
+    });
+
+    console.log(JSON.stringify(results));
+  } catch (err) {
+    console.log(JSON.stringify([]));
+  }
+}
+
+run();
