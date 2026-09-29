@@ -27,6 +27,11 @@ const STARLINK_CREDENTIALS = [
     name: 'PUSPALAD 13',
     clientId: '26a81ca7-918d-486a-b2c3-de605869ea58',
     clientSecret: 'spx_df_FIGxHVduWbwm0fx_AIom1wXDQonzSgkn0ZCWnQF-5AalAoZH'
+  },
+  {
+    name: 'PUSPALAD 25',
+    clientId: '16facb22-b1db-4b8f-90f9-ddc04d68007b',
+    clientSecret: 'spx_df_YLI32UfPuIiLk8Aq-Md7XIC2AzwsEpCh-t_yeAYsSvhCN1Sf'
   }
 ];
 
