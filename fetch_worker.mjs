@@ -53,7 +53,12 @@ async function run() {
       const targetAddressId = matchedSl.addressReferenceId || item.addressReferenceId || matchedSl.serviceAddressReferenceId;
       const matchedAddr = addresses.find(a => a.addressReferenceId === targetAddressId || a.id === targetAddressId) || {};
 
-      const nickname = matchedSl.nickname || matchedSl.serviceLineName || credName;
+      // Utamakan credName jika nickname dari API hanya bernilai umum (seperti "PUSPALAD")
+      let nickname = matchedSl.nickname || matchedSl.serviceLineName || credName;
+      if (!nickname || nickname.trim() === 'PUSPALAD') {
+        nickname = credName;
+      }
+
       let kitSerialNumber = matchedUt?.kitSerialNumber || matchedUt?.userTerminalId || item.kitSerialNumber;
 
       if (!kitSerialNumber || kitSerialNumber.length > 20) {
@@ -66,6 +71,25 @@ async function run() {
 
       const activeBc = item.billingCycles?.find(bc => bc.dailyDataUsage && bc.dailyDataUsage.length > 0) || item.billingCycles?.[0] || matchedSl.billingCycles?.[0];
       const dailyDataRaw = activeBc?.dailyDataUsage || [];
+
+      // =========================================================
+      // EKSTRAKSI TANGGAL DAN BULAN PERIODE TAGIHAN
+      // =========================================================
+      const startDateRaw = activeBc?.startDate || item.startDate || matchedSl.startDate || '';
+      const endDateRaw = activeBc?.endDate || item.endDate || matchedSl.endDate || '';
+
+      const formatDate = (dStr) => {
+        if (!dStr) return '-';
+        const d = new Date(dStr);
+        return isNaN(d.getTime()) ? dStr.substring(0, 10) : d.toISOString().split('T')[0];
+      };
+
+      const startDateFormatted = formatDate(startDateRaw);
+      const endDateFormatted = formatDate(endDateRaw);
+
+      const periodLabel = (startDateFormatted !== '-' && endDateFormatted !== '-')
+        ? `${startDateFormatted} s/d ${endDateFormatted}`
+        : (startDateFormatted !== '-' ? startDateFormatted : 'N/A');
 
       const dailyData = dailyDataRaw.map(day => {
         const priorityVal = Number(day.priorityGB || day.localPriorityGB || 0);
@@ -136,6 +160,9 @@ async function run() {
         kitId: kitSerialNumber,
         serviceStatus: 'ACTIVE',
         deviceStatus: deviceStatus,
+        period: periodLabel,                   // Menampilkan teks "2026-09-14 s/d 2026-10-14"
+        billingCycleStart: startDateFormatted, // Tanggal mulai periode
+        billingCycleEnd: endDateFormatted,     // Tanggal selesai periode
         limitGB: limitGB,
         percentUsage: percentUsage,
         localPriorityGB: localPriorityGB,
