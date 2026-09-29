@@ -91,36 +91,6 @@ async function run() {
         ? `${startDateFormatted} s/d ${endDateFormatted}`
         : (startDateFormatted !== '-' ? startDateFormatted : 'N/A');
 
-      // =========================================================
-      // EKSTRAKSI WAKTU LAST ONLINE
-      // =========================================================
-      const rawLastOnline = 
-        item.lastOnlineTime ||
-        item.lastStateChange ||
-        item.lastConnected ||
-        matchedUt?.lastOnlineTime ||
-        matchedUt?.lastConnected ||
-        matchedUt?.lastStateChange ||
-        item.timestamp ||
-        null;
-
-      let lastOnlineFormatted = 'N/A';
-      if (rawLastOnline) {
-        const d = new Date(rawLastOnline);
-        if (!isNaN(d.getTime())) {
-          lastOnlineFormatted = d.toLocaleString('id-ID', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          }).replace(/\//g, '-');
-        } else {
-          lastOnlineFormatted = String(rawLastOnline);
-        }
-      }
-
       const dailyData = dailyDataRaw.map(day => {
         const priorityVal = Number(day.priorityGB || day.localPriorityGB || 0);
         const standardVal = Number(day.standardGB || day.otherGB || 0);
@@ -133,6 +103,40 @@ async function run() {
           totalGB: totalDayVal
         };
       });
+
+      // =========================================================
+      // EKSTRAKSI WAKTU LAST UPDATE
+      // =========================================================
+      const lastDailyRecord = dailyDataRaw && dailyDataRaw.length > 0 
+        ? dailyDataRaw[dailyDataRaw.length - 1] 
+        : null;
+
+      const rawLastUpdate = 
+        item.lastUpdate ||
+        item.updatedAt ||
+        item.lastCommunicationTime ||
+        item.timestamp ||
+        matchedUt?.lastUpdate ||
+        matchedUt?.updatedAt ||
+        lastDailyRecord?.date ||
+        null;
+
+      let lastUpdateFormatted = 'N/A';
+      if (rawLastUpdate) {
+        const d = new Date(rawLastUpdate);
+        if (!isNaN(d.getTime())) {
+          lastUpdateFormatted = d.toLocaleString('id-ID', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          }).replace(/\//g, '-');
+        } else {
+          lastUpdateFormatted = String(rawLastUpdate);
+        }
+      }
 
       let localPriorityGB = activeBc?.priorityGBUsed 
         || item.servicePlan?.dataPoolUsage?.consumedAmountGB 
@@ -190,7 +194,7 @@ async function run() {
         kitId: kitSerialNumber,
         serviceStatus: 'ACTIVE',
         deviceStatus: deviceStatus,
-        lastOnline: lastOnlineFormatted,      // Kolom Last Online baru
+        lastUpdate: lastUpdateFormatted,        // Kolom Last Update baru menggantikan lastOnline
         period: periodLabel,                   // Menampilkan teks "2026-09-14 s/d 2026-10-14"
         billingCycleStart: startDateFormatted, // Tanggal mulai periode
         billingCycleEnd: endDateFormatted,     // Tanggal selesai periode
