@@ -91,3 +91,35 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Server API Multi-Account Starlink berjalan di port ${PORT}`);
 });
+
+// Fungsi pembantu untuk mengelompokkan dailyUsage menjadi monthlyUsage
+function calculateMonthlyUsage(dailyUsage = []) {
+  const monthlyMap = {};
+
+  dailyUsage.forEach(item => {
+    // Ambil format YYYY-MM dari tanggal (contoh: "2026-06")
+    const dateStr = item.day || item.date || item.timestamp;
+    if (!dateStr) return;
+    
+    const monthKey = dateStr.substring(0, 7); // "2026-06"
+    const usageVal = Number(item.dailyGb || item.gb || item.usage || 0);
+
+    if (!monthlyMap[monthKey]) {
+      monthlyMap[monthKey] = 0;
+    }
+    monthlyMap[monthKey] += usageVal;
+  });
+
+  // Ubah ke format Array [{ month: "Jun 2026", totalGb: 150.5 }, ...]
+  return Object.keys(monthlyMap).map(key => {
+    const [year, month] = key.split('-');
+    const dateObj = new Date(year, month - 1);
+    const monthName = dateObj.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+    
+    return {
+      monthKey: key,
+      month: monthName,
+      totalGb: parseFloat(monthlyMap[key].toFixed(2))
+    };
+  });
+}
