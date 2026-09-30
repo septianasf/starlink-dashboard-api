@@ -97,7 +97,7 @@ async function run() {
         const totalDayVal = Math.round((priorityVal + standardVal) * 100) / 100;
 
         return {
-          date: day.date,
+          date: day.date || '',
           priorityGB: priorityVal,
           standardGB: standardVal,
           totalGB: totalDayVal
@@ -105,37 +105,42 @@ async function run() {
       });
 
       // =========================================================
-      // EKSTRAKSI WAKTU LAST UPDATE
+      // EKSTRAKSI WAKTU LAST ONLINE REAL-TIME DARI BERBAGAI FIELD
       // =========================================================
+      const parseValidDate = (val) => {
+        if (!val) return null;
+        const d = new Date(val);
+        return !isNaN(d.getTime()) ? d : null;
+      };
+
+      const realTimeLastOnline = 
+        parseValidDate(item.lastCommunicationTime) ||
+        parseValidDate(matchedUt?.lastCommunicationTime) ||
+        parseValidDate(item.lastOnline) ||
+        parseValidDate(matchedUt?.lastOnline) ||
+        parseValidDate(item.lastReportedTime) ||
+        parseValidDate(matchedUt?.lastReportedTime) ||
+        parseValidDate(item.telemetry?.timestamp) ||
+        parseValidDate(item.timestamp) ||
+        parseValidDate(item.lastUpdate) ||
+        parseValidDate(matchedUt?.lastUpdate);
+
       const lastDailyRecord = dailyDataRaw && dailyDataRaw.length > 0 
         ? dailyDataRaw[dailyDataRaw.length - 1] 
         : null;
 
-      const rawLastUpdate = 
-        item.lastUpdate ||
-        item.updatedAt ||
-        item.lastCommunicationTime ||
-        item.timestamp ||
-        matchedUt?.lastUpdate ||
-        matchedUt?.updatedAt ||
-        lastDailyRecord?.date ||
-        null;
+      const finalLastOnlineDate = realTimeLastOnline || parseValidDate(lastDailyRecord?.date);
 
       let lastUpdateFormatted = 'N/A';
-      if (rawLastUpdate) {
-        const d = new Date(rawLastUpdate);
-        if (!isNaN(d.getTime())) {
-          lastUpdateFormatted = d.toLocaleString('id-ID', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          }).replace(/\//g, '-');
-        } else {
-          lastUpdateFormatted = String(rawLastUpdate);
-        }
+      if (finalLastOnlineDate) {
+        lastUpdateFormatted = finalLastOnlineDate.toLocaleString('id-ID', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        }).replace(/\//g, '-');
       }
 
       let localPriorityGB = activeBc?.priorityGBUsed 
@@ -154,40 +159,22 @@ async function run() {
       const percentUsage = limitGB > 0 ? Math.min(100, Math.round((localPriorityGB / limitGB) * 100)) : 0;
 
       // =========================================================
-      // EKSTRAKSI LATENCY REAL-TIME DARI BERBAGAI FIELD STARLINK
+      // PENENTUAN STATUS AMAN (SAFE CHECK)
       // =========================================================
-      const extractLatency = (target) => {
-        if (typeof target === 'number' && !isNaN(target)) return target;
-        if (Array.isArray(target) && target.length > 0) {
-          const lastVal = target[target.length - 1];
-          return typeof lastVal === 'number' ? lastVal : Number(lastVal?.value || lastVal?.latency || 0);
+      let deviceStatus = 'OFFLINE';
+
+      // 1. Cek selisih waktu Last Online real-time dengan jam server
+      if (finalLastOnlineDate) {
+        const now = Date.now();
+        const diffMs = now - finalLastOnlineDate.getTime();
+        const oneHourMs = 60 * 60 * 1000;
+
+        if (diffMs >= 0 && diffMs <= oneHourMs) {
+          deviceStatus = 'ONLINE';
         }
-        if (typeof target === 'object' && target !== null) {
-          return Number(target.last || target.current || target.mean || target.value || 0);
-        }
-        return 0;
-      };
+      }
 
-      const latencyVal = 
-        extractLatency(item.latency) ||
-        extractLatency(item.pingLatencyMs) ||
-        extractLatency(item.latencyMs) ||
-        extractLatency(item.telemetry?.latency) ||
-        extractLatency(item.realtimeData?.latency) ||
-        extractLatency(matchedUt?.latency) ||
-        extractLatency(matchedUt?.pingLatencyMs) ||
-        extractLatency(matchedUt?.telemetry?.latency) ||
-        0;
-
-      // =========================================================
-      // PENENTUAN DEVICE STATUS (LATENCY & TELEMETRY FALLBACK)
-      // =========================================================
-      const hasTrafficOrUptime = 
-        Number(item.downlinkThroughputBps || item.telemetry?.downlinkThroughputBps || matchedUt?.downlinkThroughputBps || 0) > 0 ||
-        Number(item.uptimeSeconds || item.telemetry?.uptimeSeconds || matchedUt?.uptimeSeconds || 0) > 0 ||
-        Boolean(item.publicIp || item.ipAddress || matchedUt?.publicIp) ||
-        Boolean(item.lastCommunicationTime || matchedUt?.lastCommunicationTime);
-
+      // 2. Extra Fallback: Pengecekan aman penggunaan data hari ini
       const isExplicitOnline = 
         item.online === true || 
         matchedUt?.connected === true || 
@@ -195,9 +182,9 @@ async function run() {
         item.state === 'ONLINE' || 
         item.status === 'ONLINE';
 
-      let deviceStatus = 'OFFLINE';
+      const hasRecentDataUsage = dailyData.length > 0 && dailyData[dailyData.length - 1].totalGB > 0;
 
-      if (latencyVal > 0 || isExplicitOnline || hasTrafficOrUptime) {
+      if (deviceStatus === 'OFFLINE' && (isExplicitOnline || hasRecentDataUsage)) {
         deviceStatus = 'ONLINE';
       }
 
@@ -225,8 +212,7 @@ async function run() {
         serviceLineNumber: slNumber,
         kitId: kitSerialNumber,
         serviceStatus: 'ACTIVE',
-        deviceStatus: deviceStatus,             // Menghasilkan 'ONLINE' atau 'OFFLINE'
-        latency: latencyVal,                    // Nilai latency ms
+        deviceStatus: deviceStatus,
         lastUpdate: lastUpdateFormatted,
         period: periodLabel,
         billingCycleStart: startDateFormatted,
@@ -244,6 +230,8 @@ async function run() {
 
     console.log(JSON.stringify(results));
   } catch (err) {
+    // Menampilkan log kesalahan jika terjadi error agar mudah di-debug
+    console.error("Error Detail:", err);
     console.log(JSON.stringify([]));
   }
 }
