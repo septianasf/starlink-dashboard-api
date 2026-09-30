@@ -154,26 +154,51 @@ async function run() {
       const percentUsage = limitGB > 0 ? Math.min(100, Math.round((localPriorityGB / limitGB) * 100)) : 0;
 
       // =========================================================
-      // PENENTUAN DEVICE STATUS BERDASARKAN LATENCY
+      // EKSTRAKSI LATENCY REAL-TIME DARI BERBAGAI FIELD STARLINK
       // =========================================================
-      const rawLatency = 
-        item.pingLatencyMs ?? 
-        item.latency ?? 
-        matchedUt?.pingLatencyMs ?? 
-        matchedUt?.latency ?? 
+      const extractLatency = (target) => {
+        if (typeof target === 'number' && !isNaN(target)) return target;
+        if (Array.isArray(target) && target.length > 0) {
+          const lastVal = target[target.length - 1];
+          return typeof lastVal === 'number' ? lastVal : Number(lastVal?.value || lastVal?.latency || 0);
+        }
+        if (typeof target === 'object' && target !== null) {
+          return Number(target.last || target.current || target.mean || target.value || 0);
+        }
+        return 0;
+      };
+
+      const latencyVal = 
+        extractLatency(item.latency) ||
+        extractLatency(item.pingLatencyMs) ||
+        extractLatency(item.latencyMs) ||
+        extractLatency(item.telemetry?.latency) ||
+        extractLatency(item.realtimeData?.latency) ||
+        extractLatency(matchedUt?.latency) ||
+        extractLatency(matchedUt?.pingLatencyMs) ||
+        extractLatency(matchedUt?.telemetry?.latency) ||
         0;
 
-      const latencyVal = Number(rawLatency);
-      
-      // Jika latency > 0 ms maka ONLINE, jika 0 ms / null / RTO maka OFFLINE
-      let deviceStatus = (latencyVal > 0) ? 'ONLINE' : 'OFFLINE';
+      // =========================================================
+      // PENENTUAN DEVICE STATUS (LATENCY & TELEMETRY FALLBACK)
+      // =========================================================
+      const hasTrafficOrUptime = 
+        Number(item.downlinkThroughputBps || item.telemetry?.downlinkThroughputBps || matchedUt?.downlinkThroughputBps || 0) > 0 ||
+        Number(item.uptimeSeconds || item.telemetry?.uptimeSeconds || matchedUt?.uptimeSeconds || 0) > 0 ||
+        Boolean(item.publicIp || item.ipAddress || matchedUt?.publicIp) ||
+        Boolean(item.lastCommunicationTime || matchedUt?.lastCommunicationTime);
 
-      // Fallback cadangan: Jika latency tidak tersedia di API, gunakan pengecekan koneksi eksplisit
-      if (latencyVal === 0) {
-        const isExplicitOnline = item.online === true || matchedUt?.connected === true || item.deviceState === 'CONNECTED' || item.state === 'ONLINE';
-        if (isExplicitOnline) {
-          deviceStatus = 'ONLINE';
-        }
+      const isExplicitOnline = 
+        item.online === true || 
+        matchedUt?.connected === true || 
+        item.deviceState === 'CONNECTED' || 
+        item.state === 'ONLINE' || 
+        item.status === 'ONLINE';
+
+      let deviceStatus = 'OFFLINE';
+
+      if (latencyVal > 0 || isExplicitOnline || hasTrafficOrUptime) {
+        deviceStatus = 'ONLINE';
       }
 
       // Extract latitude & longitude dari objek alamat terasosiasi
@@ -201,7 +226,7 @@ async function run() {
         kitId: kitSerialNumber,
         serviceStatus: 'ACTIVE',
         deviceStatus: deviceStatus,             // Menghasilkan 'ONLINE' atau 'OFFLINE'
-        latency: latencyVal,                    // Properti latency (ms) dikirimkan ke Appsmith
+        latency: latencyVal,                    // Nilai latency ms
         lastUpdate: lastUpdateFormatted,
         period: periodLabel,
         billingCycleStart: startDateFormatted,
