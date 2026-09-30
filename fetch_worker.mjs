@@ -159,22 +159,22 @@ async function run() {
       const percentUsage = limitGB > 0 ? Math.min(100, Math.round((localPriorityGB / limitGB) * 100)) : 0;
 
       // =========================================================
-      // PENENTUAN STATUS AMAN (SAFE CHECK)
+      // PENENTUAN STATUS KETAT (STRICT REAL-TIME)
       // =========================================================
       let deviceStatus = 'OFFLINE';
 
-      // 1. Cek selisih waktu Last Online real-time dengan jam server
+      // 1. Validasi Timestamp Last Online (Maksimal 1 Jam yang lalu)
       if (finalLastOnlineDate) {
         const now = Date.now();
         const diffMs = now - finalLastOnlineDate.getTime();
-        const oneHourMs = 60 * 60 * 1000;
+        const oneHourMs = 60 * 60 * 1000; // 1 Jam
 
         if (diffMs >= 0 && diffMs <= oneHourMs) {
           deviceStatus = 'ONLINE';
         }
       }
 
-      // 2. Extra Fallback: Pengecekan aman penggunaan data hari ini
+      // 2. Secondary Check: Status Explicit dari API (jika timestamp null/lag)
       const isExplicitOnline = 
         item.online === true || 
         matchedUt?.connected === true || 
@@ -182,9 +182,20 @@ async function run() {
         item.state === 'ONLINE' || 
         item.status === 'ONLINE';
 
-      const hasRecentDataUsage = dailyData.length > 0 && dailyData[dailyData.length - 1].totalGB > 0;
+      // 3. Fallback Kuota HARI INI saja (mencegah record tanggal lampau terbaca ONLINE)
+      const todayISO = new Date().toISOString().split('T')[0]; 
+      
+      const hasTodayDataUsage = dailyData.some(d => {
+        if (!d.date) return false;
+        try {
+          const recordDateISO = new Date(d.date).toISOString().split('T')[0];
+          return recordDateISO === todayISO && d.totalGB > 0;
+        } catch (e) {
+          return false;
+        }
+      });
 
-      if (deviceStatus === 'OFFLINE' && (isExplicitOnline || hasRecentDataUsage)) {
+      if (deviceStatus === 'OFFLINE' && (isExplicitOnline || hasTodayDataUsage)) {
         deviceStatus = 'ONLINE';
       }
 
@@ -230,7 +241,6 @@ async function run() {
 
     console.log(JSON.stringify(results));
   } catch (err) {
-    // Menampilkan log kesalahan jika terjadi error agar mudah di-debug
     console.error("Error Detail:", err);
     console.log(JSON.stringify([]));
   }
