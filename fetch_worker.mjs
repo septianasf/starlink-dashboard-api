@@ -153,19 +153,26 @@ async function run() {
 
       const percentUsage = limitGB > 0 ? Math.min(100, Math.round((localPriorityGB / limitGB) * 100)) : 0;
 
-      let deviceStatus = 'Offline';
-      const isExplicitOnline = item.online === true || matchedUt?.connected === true || item.deviceState === 'CONNECTED' || item.state === 'ONLINE';
-      const isExplicitOffline = item.online === false || matchedUt?.connected === false || item.deviceState === 'OFFLINE' || matchedUt?.unreachable === true;
+      // =========================================================
+      // PENENTUAN DEVICE STATUS BERDASARKAN LATENCY
+      // =========================================================
+      const rawLatency = 
+        item.pingLatencyMs ?? 
+        item.latency ?? 
+        matchedUt?.pingLatencyMs ?? 
+        matchedUt?.latency ?? 
+        0;
 
-      if (isExplicitOnline) {
-        deviceStatus = 'Online';
-      } else if (isExplicitOffline) {
-        deviceStatus = 'Offline';
-      } else {
-        if (matchedSl.active !== false && (localPriorityGB > 0 || otherDataGB > 0 || dailyData.length > 0)) {
-          deviceStatus = 'Online';
-        } else {
-          deviceStatus = 'Offline';
+      const latencyVal = Number(rawLatency);
+      
+      // Jika latency > 0 ms maka ONLINE, jika 0 ms / null / RTO maka OFFLINE
+      let deviceStatus = (latencyVal > 0) ? 'ONLINE' : 'OFFLINE';
+
+      // Fallback cadangan: Jika latency tidak tersedia di API, gunakan pengecekan koneksi eksplisit
+      if (latencyVal === 0) {
+        const isExplicitOnline = item.online === true || matchedUt?.connected === true || item.deviceState === 'CONNECTED' || item.state === 'ONLINE';
+        if (isExplicitOnline) {
+          deviceStatus = 'ONLINE';
         }
       }
 
@@ -193,11 +200,12 @@ async function run() {
         serviceLineNumber: slNumber,
         kitId: kitSerialNumber,
         serviceStatus: 'ACTIVE',
-        deviceStatus: deviceStatus,
-        lastUpdate: lastUpdateFormatted,        // Kolom Last Update baru menggantikan lastOnline
-        period: periodLabel,                   // Menampilkan teks "2026-09-14 s/d 2026-10-14"
-        billingCycleStart: startDateFormatted, // Tanggal mulai periode
-        billingCycleEnd: endDateFormatted,     // Tanggal selesai periode
+        deviceStatus: deviceStatus,             // Menghasilkan 'ONLINE' atau 'OFFLINE'
+        latency: latencyVal,                    // Properti latency (ms) dikirimkan ke Appsmith
+        lastUpdate: lastUpdateFormatted,
+        period: periodLabel,
+        billingCycleStart: startDateFormatted,
+        billingCycleEnd: endDateFormatted,
         limitGB: limitGB,
         percentUsage: percentUsage,
         localPriorityGB: localPriorityGB,
